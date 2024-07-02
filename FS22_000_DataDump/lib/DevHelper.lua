@@ -171,7 +171,7 @@ end
 
 
 
-function DevHelper.saveTableToFile(fileName, tableName, tableObject, maxDepth, ignoredTables, writer, memProfiler)
+function DevHelper.saveTableToFile(fileName, tableName, tableObject, maxDepth, ignoredTables, writer, memProfiler, header)
     maxDepth = maxDepth or 2
 
     if tableObject == nil then
@@ -326,6 +326,10 @@ function DevHelper.saveTableToFile(fileName, tableName, tableObject, maxDepth, i
                 collectgarbage()
                 -- collectgarbage("step")
             end
+        end
+
+        if header ~= nil then
+            writer:appendLine(header)
         end
 
         writer:appendF("%s = {", tableName)
