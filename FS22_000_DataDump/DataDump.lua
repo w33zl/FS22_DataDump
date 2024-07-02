@@ -97,7 +97,7 @@ function DataDump:processChunk()
             end
         end
 
-        if self.last == nil or (self.chunkTimer:elapsed() > 1) or (count >= 500) then
+        if self.last == nil or (self.chunkTimer:elapsed() > 1) or (count >= 5000) then
             count = 0
             self.chunkTimer = DevHelper.measureStart()
             return self.last
@@ -126,7 +126,7 @@ function DataDump:finalize()
     saveOutputToFile("Tables", self.output.tables)
     saveOutputToFile("Variables", self.output.fields)
 
-    saveTimer:stop()
+    Log:info(saveTimer:stop(true))
 
     if self.visualize then
         self.g_powerTools:visualizeTable("Output", self.output, self.visualizeDepth)
@@ -149,7 +149,7 @@ function DataDump:update(dt)
     local val = self:processChunk()
     if val == nil then
         self.inProgress = false
-        self.executionTimer:stop()
+        Log:info(self.executionTimer:stop(true))
 
         Log:info("Found %d functions, %d classes, %d tables and %d fields in %d chunks", self.stats.functions, self.stats.classes, self.stats.tables, self.stats.fields, self.chunkCount)
 
