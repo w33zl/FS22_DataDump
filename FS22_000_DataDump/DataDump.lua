@@ -17,10 +17,16 @@ DataDump:source("lib/DevHelper.lua")
 
 function DataDump:loadMap(filename)
     self.g_powerTools = g_globalMods["FS22_PowerTools"]
+    createFolder(g_currentModSettingsDirectory)
 end
 
-function DataDump:consoleCommandDump(filename)
-    print("Got it! Process started")
+function DataDump:consoleCommandDump(visualize, visualizeDepth)
+
+    if self.triggerProcess or self.inProgress or self.isFinalizing then
+        Log:warning("Dumping already in progress")
+        return
+    end
+
     self.executionTimer = DevHelper.measureStart("Processing global table took %.2f seconds")
     self.chunkTimer = DevHelper.measureStart()
     self.activeTable = self.__g
@@ -39,8 +45,11 @@ function DataDump:consoleCommandDump(filename)
         fields = 0,
         total = 0,
     }
-end
+    self.visualize = visualize and true
+    self.visualizeDepth = tonumber(visualizeDepth) or 2
 
+    Log:debug("Visualize: %s, Depth: %d", tostring(self.visualize), self.visualizeDepth)
+end
 
 function DataDump:processChunk()
     --NOTE: Yes, this is over engineered, but it is prepared to handle a large number of tables in a deep structure
@@ -61,9 +70,12 @@ function DataDump:processChunk()
                 self.stats.functions = self.stats.functions + 1
             elseif type(value) == "table" then
                 local isClass = false
-                if value.isa ~= nil and type(value.isa) == "function" then
+                if self.last == "StringUtil" then --HACK: Dirty solution to prevent callstack "error" due to StringUtil being obsolete
+                    isClass = true
+                elseif value.isa ~= nil and type(value.isa) == "function" then
                     isClass = value:isa(value) -- Should only be true on the actual class, but not on derived objects
                 end
+
                 if isClass then
                     -- table.insert(self.output.classes, self.last)
                     self.output.classes[self.last] = value
@@ -93,8 +105,45 @@ function DataDump:processChunk()
     end
 end
 
-function DataDump:update(filename)
-    if not self.triggerProcess and not self.inProgress then
+function DataDump:finalize()
+    local basePath = g_currentModSettingsDirectory .. "global"
+    local saveTimer = DevHelper.measureStart("Files saved in %.2f seconds")
+
+    local function saveOutputToFile(name, table)
+        local filePath = basePath .. name .. ".lua"
+        if fileExists(filePath) then
+            deleteFile(filePath)
+        end
+        self.g_powerTools:saveTable("global" .. name, table, filePath, 1)
+
+        if not fileExists(filePath) then
+            Log:error("Failed to save '%s' to '%s'", name, filePath)
+        end
+
+    end
+    saveOutputToFile("Functions", self.output.functions)
+    saveOutputToFile("Classes", self.output.classes)
+    saveOutputToFile("Tables", self.output.tables)
+    saveOutputToFile("Variables", self.output.fields)
+    -- self.g_powerTools:saveTable("globalFunctions", self.output.functions, basePath .. "Functions.lua", 2)
+    -- self.g_powerTools:saveTable("globalClasses", self.output.classes, basePath .. "Classes.lua", 2)
+    -- self.g_powerTools:saveTable("globalTables", self.output.tables, basePath .. "Tables.lua", 2)
+    -- self.g_powerTools:saveTable("globalVariables", self.output.fields, basePath .. "Variables.lua", 2)
+
+    saveTimer:stop()
+
+    if self.visualize then
+        self.g_powerTools:visualizeTable("Output", self.output, self.visualizeDepth)
+    end
+
+    self.isFinalizing = false
+end
+
+function DataDump:update(dt)
+    if self.isFinalizing then
+        DataDump:finalize()
+        return
+    elseif not self.triggerProcess and not self.inProgress then
         return
     end
 
@@ -108,14 +157,15 @@ function DataDump:update(filename)
 
         Log:info("Found %d functions, %d classes, %d tables and %d fields in %d chunks", self.stats.functions, self.stats.classes, self.stats.tables, self.stats.fields, self.chunkCount)
 
-        -- DebugUtil.printTableRecursively(self.output, ":: ", 1)
-        -- DebugUtil.printTableRecursively(g_globalMods, "g_globalMods:: ", 3)
-        if self.g_powerTools ~= nil then
-            self.g_powerTools:visualizeTable("Output", self.output, 3)
-        else
+        if self.g_powerTools == nil then
             Log:warning("g_powerTools was not found, verify that the mod 'PowerTools: Developer' is enabled.")
-            -- DebugUtil.printTableRecursively(self.output, ":: ", 2)
-            end
+            return
+        end
+
+        Log:info("Saving output tables...")
+
+        self.isFinalizing = true
+
         return
     else
         Log:info("#%d: Reading global table, found %d items so far... ", self.chunkCount, self.stats.total)
